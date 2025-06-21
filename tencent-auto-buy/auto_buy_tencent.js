@@ -53,7 +53,7 @@ const DEFAULT_CONFIG = {
   maxRetries: 3,
   exitAfterPurchase: false,
   logFile: './auto-buy.log',
-  interactiveMode: true
+  interactiveMode: process.env.INTERACTIVE_MODE !== 'false'  // 支持环境变量控制
 };
 
 // ========== 交互式命令行工具 ==========

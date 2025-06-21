@@ -8,10 +8,12 @@ module.exports = {
       watch: false,
       max_memory_restart: '1G',
       env: {
-        NODE_ENV: 'development'
+        NODE_ENV: 'development',
+        INTERACTIVE_MODE: 'false'
       },
       env_production: {
-        NODE_ENV: 'production'
+        NODE_ENV: 'production',
+        INTERACTIVE_MODE: 'false'
       },
       log_file: './logs/combined.log',
       out_file: './logs/out.log',

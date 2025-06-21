@@ -1,3 +1,11 @@
+<!--
+ * @Author: edenliang edenliang@tencent.com
+ * @Date: 2025-06-22 01:13:16
+ * @LastEditors: edenliang edenliang@tencent.com
+ * @LastEditTime: 2025-06-22 01:27:26
+ * @FilePath: /onekey-install-shell/tencent-auto-buy/USAGE.md
+ * @Description: 
+-->
 # 腾讯云自动购买脚本使用说明
 
 ## 🚀 快速使用
@@ -77,15 +85,11 @@ pm2 stop tencent-auto-buy
 - 错误信息：`Error [ERR_USE_AFTER_CLOSE]: readline was closed`
 - **解决方案**：
   1. 确保已经通过管理工具选择了套餐并保存到配置文件
-  2. 检查 `ecosystem.config.js` 中 `INTERACTIVE_MODE: 'false'` 设置正确
+  2. 检查 `config.json` 中的 `bundleId` 是否已设置（不是 `bundle-razor-xxxx`）
   3. 重启 PM2 服务：
      ```bash
      pm2 delete tencent-auto-buy
      pm2 start ecosystem.config.js
-     ```
-  4. 如果问题持续，可以运行测试脚本：
-     ```bash
-     node test-pm2.js
      ```
 
 ### 无法连接到腾讯云

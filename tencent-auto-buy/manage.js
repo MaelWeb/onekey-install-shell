@@ -170,12 +170,10 @@ class AutoBuyManager {
   async showBundles() {
     console.log('\n📋 正在查询套餐列表...');
     try {
-      // 临时设置非交互模式来查看套餐列表
-      const env = { ...process.env, INTERACTIVE_MODE: 'false' };
+      // 直接运行主脚本查看套餐列表
       const node = spawn('node', ['./auto_buy_tencent.js'], {
         stdio: 'inherit',
-        shell: true,
-        env
+        shell: true
       });
 
       return new Promise((resolve, reject) => {

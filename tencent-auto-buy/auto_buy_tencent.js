@@ -188,17 +188,27 @@ class InteractiveCLI {
    * @returns {Promise<number>}
    */
   promptForNumber(question, min, max) {
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
+      // 检查 readline 接口是否已关闭
+      if (!this.rl || this.rl.closed) {
+        reject(new Error('readline 接口已关闭，无法进行交互式操作'));
+        return;
+      }
+
       const askQuestion = () => {
-        this.rl.question(question, (answer) => {
-          const num = parseInt(answer, 10);
-          if (isNaN(num) || num < min || num > max) {
-            console.log(`❌ 请输入 ${min}-${max} 之间的数字`);
-            askQuestion();
-          } else {
-            resolve(num);
-          }
-        });
+        try {
+          this.rl.question(question, (answer) => {
+            const num = parseInt(answer, 10);
+            if (isNaN(num) || num < min || num > max) {
+              console.log(`❌ 请输入 ${min}-${max} 之间的数字`);
+              askQuestion();
+            } else {
+              resolve(num);
+            }
+          });
+        } catch (error) {
+          reject(new Error(`readline 操作失败: ${error.message}`));
+        }
       };
       askQuestion();
     });
@@ -211,18 +221,28 @@ class InteractiveCLI {
    * @returns {Promise<boolean>}
    */
   promptForYesNo(question, defaultAnswer) {
-    return new Promise((resolve) => {
-      this.rl.question(question, (answer) => {
-        const lowerAnswer = answer.toLowerCase().trim();
-        if (lowerAnswer === '' || lowerAnswer === 'y' || lowerAnswer === 'yes') {
-          resolve(true);
-        } else if (lowerAnswer === 'n' || lowerAnswer === 'no') {
-          resolve(false);
-        } else {
-          console.log('❌ 请输入 y/yes 或 n/no');
-          this.promptForYesNo(question, defaultAnswer).then(resolve);
-        }
-      });
+    return new Promise((resolve, reject) => {
+      // 检查 readline 接口是否已关闭
+      if (!this.rl || this.rl.closed) {
+        reject(new Error('readline 接口已关闭，无法进行交互式操作'));
+        return;
+      }
+
+      try {
+        this.rl.question(question, (answer) => {
+          const lowerAnswer = answer.toLowerCase().trim();
+          if (lowerAnswer === '' || lowerAnswer === 'y' || lowerAnswer === 'yes') {
+            resolve(true);
+          } else if (lowerAnswer === 'n' || lowerAnswer === 'no') {
+            resolve(false);
+          } else {
+            console.log('❌ 请输入 y/yes 或 n/no');
+            this.promptForYesNo(question, defaultAnswer).then(resolve).catch(reject);
+          }
+        });
+      } catch (error) {
+        reject(new Error(`readline 操作失败: ${error.message}`));
+      }
     });
   }
 
@@ -509,26 +529,24 @@ class AutoBuyManager {
       await this.client.validateCredentials();
       await this.logger.success('凭证验证成功');
 
-      // 根据交互模式决定是否显示套餐列表
-      if (this.config.interactiveMode) {
-        // 交互模式：显示套餐列表并进行交互式选择
-        await this.logger.info('正在查询锐驰型套餐列表...');
-        const bundles = await this.client.listRazorBundles();
-        await this.logger.info(`找到 ${bundles.length} 个锐驰型套餐`);
-        
-        if (this.cli) {
+      // 检查配置文件中的套餐是否有效
+      if (this.config.bundleId && this.config.bundleId !== 'bundle-razor-xxxx') {
+        // 配置文件中有指定套餐，直接开始监控
+        await this.logger.info(`使用配置文件中的套餐: ${this.config.bundleId}`);
+        await this.logger.info(`开始轮询套餐 ${this.config.bundleId} 的库存情况...`);
+        await this.startPolling();
+      } else {
+        // 配置文件中没有指定套餐，进行交互式选择
+        if (this.config.interactiveMode && this.cli) {
+          await this.logger.info('正在查询锐驰型套餐列表...');
+          const bundles = await this.client.listRazorBundles();
+          await this.logger.info(`找到 ${bundles.length} 个锐驰型套餐`);
           await this.handleInteractiveSelection(bundles);
         } else {
-          this.displayBundles(bundles);
+          await this.logger.error('配置文件中没有指定套餐，且无法进行交互式选择');
+          process.exit(1);
         }
-      } else {
-        // 非交互模式：直接使用配置文件中的套餐 ID
-        await this.logger.info(`非交互模式，使用配置文件中的套餐: ${this.config.bundleId}`);
       }
-
-      // 开始轮询
-      await this.logger.info(`开始轮询套餐 ${this.config.bundleId} 的库存情况...`);
-      await this.startPolling();
 
     } catch (error) {
       console.error('AutoBuyManager 详细错误信息:', error);
@@ -549,6 +567,11 @@ class AutoBuyManager {
    */
   async handleInteractiveSelection(bundles) {
     try {
+      // 检查 CLI 是否可用
+      if (!this.cli) {
+        throw new Error('交互式 CLI 不可用');
+      }
+
       // 显示当前配置
       this.cli.showCurrentConfig(this.config);
       
@@ -576,6 +599,14 @@ class AutoBuyManager {
         await this.logger.info('用户取消选择，程序退出');
         process.exit(0);
       }
+      
+      // 处理 readline 相关错误
+      if (error.message.includes('readline') || error.message.includes('ERR_USE_AFTER_CLOSE')) {
+        await this.logger.warning('检测到 readline 错误，切换到非交互模式');
+        await this.logger.info(`使用配置文件中的套餐: ${this.config.bundleId}`);
+        return; // 继续执行，不退出程序
+      }
+      
       throw error;
     }
   }

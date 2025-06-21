@@ -509,17 +509,21 @@ class AutoBuyManager {
       await this.client.validateCredentials();
       await this.logger.success('凭证验证成功');
 
-      // 显示套餐列表
-      await this.logger.info('正在查询锐驰型套餐列表...');
-      const bundles = await this.client.listRazorBundles();
-      await this.logger.info(`找到 ${bundles.length} 个锐驰型套餐`);
-      
-      // 交互式套餐选择
-      if (this.config.interactiveMode && this.cli) {
-        await this.handleInteractiveSelection(bundles);
+      // 根据交互模式决定是否显示套餐列表
+      if (this.config.interactiveMode) {
+        // 交互模式：显示套餐列表并进行交互式选择
+        await this.logger.info('正在查询锐驰型套餐列表...');
+        const bundles = await this.client.listRazorBundles();
+        await this.logger.info(`找到 ${bundles.length} 个锐驰型套餐`);
+        
+        if (this.cli) {
+          await this.handleInteractiveSelection(bundles);
+        } else {
+          this.displayBundles(bundles);
+        }
       } else {
-        // 非交互模式，显示套餐列表
-        this.displayBundles(bundles);
+        // 非交互模式：直接使用配置文件中的套餐 ID
+        await this.logger.info(`非交互模式，使用配置文件中的套餐: ${this.config.bundleId}`);
       }
 
       // 开始轮询
@@ -732,14 +736,23 @@ async function main() {
     const client = new TencentCloudClient(config);
     await logger.success('腾讯云客户端初始化成功');
     
-    // 初始化交互式命令行工具
-    await logger.info('正在初始化交互式命令行工具...');
-    const rl = readline.createInterface({
-      input: process.stdin,
-      output: process.stdout
-    });
-    const cli = new InteractiveCLI(rl);
-    await logger.success('交互式命令行工具初始化成功');
+    // 根据交互模式决定是否初始化 CLI
+    let cli = null;
+    let rl = null;
+    
+    if (config.interactiveMode) {
+      // 交互模式：初始化交互式命令行工具
+      await logger.info('正在初始化交互式命令行工具...');
+      rl = readline.createInterface({
+        input: process.stdin,
+        output: process.stdout
+      });
+      cli = new InteractiveCLI(rl);
+      await logger.success('交互式命令行工具初始化成功');
+    } else {
+      // 非交互模式：跳过 CLI 初始化
+      await logger.info('非交互模式，跳过交互式命令行工具初始化');
+    }
     
     // 初始化管理器
     await logger.info('正在初始化自动购买管理器...');
@@ -750,7 +763,9 @@ async function main() {
     const gracefulShutdown = async (signal) => {
       await logger.info(`收到信号 ${signal}，正在优雅退出...`);
       manager.stop();
-      rl.close();
+      if (rl) {
+        rl.close();
+      }
       await logger.info('程序已退出');
       process.exit(0);
     };

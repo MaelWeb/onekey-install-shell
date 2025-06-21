@@ -73,6 +73,21 @@ pm2 stop tencent-auto-buy
 - 使用 `node manage.js` 进行交互式操作
 - 或直接编辑 `config.json` 文件
 
+### PM2 启动时报 readline 错误
+- 错误信息：`Error [ERR_USE_AFTER_CLOSE]: readline was closed`
+- **解决方案**：
+  1. 确保已经通过管理工具选择了套餐并保存到配置文件
+  2. 检查 `ecosystem.config.js` 中 `INTERACTIVE_MODE: 'false'` 设置正确
+  3. 重启 PM2 服务：
+     ```bash
+     pm2 delete tencent-auto-buy
+     pm2 start ecosystem.config.js
+     ```
+  4. 如果问题持续，可以运行测试脚本：
+     ```bash
+     node test-pm2.js
+     ```
+
 ### 无法连接到腾讯云
 - 检查 `secretId` 和 `secretKey` 是否正确
 - 确认网络连接正常

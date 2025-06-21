@@ -1,0 +1,14 @@
+{
+  "secretId": "YOUR_SECRET_ID",
+  "secretKey": "YOUR_SECRET_KEY",
+  "region": "ap-hongkong",
+  "bundleId": "bundle-razor-xxxx",
+  "blueprintId": "lhbp-xxxx",
+  "instanceNamePrefix": "auto-ruichi",
+  "instanceCount": 1,
+  "checkInterval": 10000,
+  "maxRetries": 3,
+  "exitAfterPurchase": false,
+  "logFile": "./auto-buy.log",
+  "interactiveMode": true
+} 

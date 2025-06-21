@@ -1,0 +1,41 @@
+{
+  "name": "tencent-auto-buy",
+  "version": "2.1.0",
+  "description": "腾讯云轻量应用服务器自动购买脚本",
+  "main": "auto_buy_tencent.js",
+  "bin": {
+    "tencent-auto-buy": "./auto_buy_tencent.js"
+  },
+  "scripts": {
+    "start": "node auto_buy_tencent.js",
+    "dev": "node --inspect auto_buy_tencent.js",
+    "test": "node test-interactive.js",
+    "test:interactive": "node test-interactive.js",
+    "test:credentials": "node test-credentials.js"
+  },
+  "keywords": [
+    "tencent-cloud",
+    "lighthouse",
+    "auto-buy",
+    "server",
+    "cloud",
+    "interactive"
+  ],
+  "author": "edenliang edenliang@tencent.com",
+  "license": "MIT",
+  "dependencies": {
+    "tencentcloud-sdk-nodejs": "^4.0.0",
+    "uuid": "^9.0.0"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-username/tencent-auto-buy.git"
+  },
+  "bugs": {
+    "url": "https://github.com/your-username/tencent-auto-buy/issues"
+  },
+  "homepage": "https://github.com/your-username/tencent-auto-buy#readme"
+} 

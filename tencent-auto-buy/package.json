@@ -11,7 +11,12 @@
     "dev": "node --inspect auto_buy_tencent.js",
     "test": "node test-interactive.js",
     "test:interactive": "node test-interactive.js",
-    "test:credentials": "node test-credentials.js"
+    "test:credentials": "node test-credentials.js",
+    "pm2:start": "pm2 start ecosystem.config.js",
+    "pm2:stop": "pm2 stop tencent-auto-buy",
+    "pm2:restart": "pm2 restart tencent-auto-buy",
+    "pm2:logs": "pm2 logs tencent-auto-buy",
+    "pm2:status": "pm2 status"
   },
   "keywords": [
     "tencent-cloud",
@@ -19,7 +24,8 @@
     "auto-buy",
     "server",
     "cloud",
-    "interactive"
+    "interactive",
+    "pm2"
   ],
   "author": "edenliang edenliang@tencent.com",
   "license": "MIT",

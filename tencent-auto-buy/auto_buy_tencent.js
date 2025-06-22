@@ -449,16 +449,39 @@ class TencentCloudClient {
    * @returns {Promise<boolean>}
    */
   async isInStock(bundleId) {
+    // 使用与 listRazorBundles 相同的过滤条件，确保数据一致性
     const req = {
-      Filters: [{ Name: 'bundle-id', Values: [bundleId] }],
+      Filters: [{ Name: 'bundle-type', Values: ['RAZOR_SPEED_BUNDLE'] }],
     };
 
     try {
       const resp = await this.client.DescribeBundles(req);
       if (!resp.BundleSet || resp.BundleSet.length === 0) {
+        console.log(`⚠️  未找到任何锐驰型套餐`);
         return false;
       }
-      return resp.BundleSet[0].BundleSalesState === 'AVAILABLE';
+
+      // 在锐驰型套餐中查找指定的套餐ID
+      const targetBundle = resp.BundleSet.find(bundle => bundle.BundleId === bundleId);
+      
+      if (!targetBundle) {
+        console.log(`⚠️  在锐驰型套餐列表中未找到套餐: ${bundleId}`);
+        console.log(`📋 可用的锐驰型套餐: ${resp.BundleSet.map(b => b.BundleId).join(', ')}`);
+        return false;
+      }
+
+      const isAvailable = targetBundle.BundleSalesState === 'AVAILABLE';
+      
+      // 添加详细的调试信息
+      console.log(`🔍 套餐 ${bundleId} 库存检查详情:`);
+      console.log(`   - 套餐ID: ${targetBundle.BundleId}`);
+      console.log(`   - 显示标题: ${targetBundle.BundleDisplayTitle || 'N/A'}`);
+      console.log(`   - CPU: ${targetBundle.CPU}核`);
+      console.log(`   - 内存: ${targetBundle.Memory}GB`);
+      console.log(`   - 销售状态: ${targetBundle.BundleSalesState}`);
+      console.log(`   - 带宽: ${targetBundle.InternetMaxBandwidthOut || 'N/A'}Mbps`);
+      
+      return isAvailable;
     } catch (error) {
       throw new Error(`检查库存状态失败: ${error.message}`);
     }
@@ -495,6 +518,71 @@ class TencentCloudClient {
         success: false,
         error: error.message
       };
+    }
+  }
+
+  /**
+   * 调试方法：对比不同查询方式的结果
+   * @param {string} bundleId - 套餐 ID
+   * @returns {Promise<void>}
+   */
+  async debugBundleStatus(bundleId) {
+    console.log('\n🔍 开始调试套餐状态查询...');
+    console.log('='.repeat(60));
+    
+    try {
+      // 方法1：使用 bundle-type 过滤（与 listRazorBundles 相同）
+      console.log('📋 方法1: 使用 bundle-type 过滤查询锐驰型套餐列表');
+      const razorReq = {
+        Filters: [{ Name: 'bundle-type', Values: ['RAZOR_SPEED_BUNDLE'] }],
+      };
+      const razorResp = await this.client.DescribeBundles(razorReq);
+      const razorBundle = razorResp.BundleSet?.find(b => b.BundleId === bundleId);
+      
+      if (razorBundle) {
+        console.log(`✅ 在锐驰型套餐列表中找到: ${bundleId}`);
+        console.log(`   状态: ${razorBundle.BundleSalesState}`);
+        console.log(`   标题: ${razorBundle.BundleDisplayTitle || 'N/A'}`);
+      } else {
+        console.log(`❌ 在锐驰型套餐列表中未找到: ${bundleId}`);
+        console.log(`   可用的锐驰型套餐: ${razorResp.BundleSet?.map(b => b.BundleId).join(', ') || '无'}`);
+      }
+      
+      console.log('\n' + '-'.repeat(40));
+      
+      // 方法2：使用 bundle-id 过滤（原来的方法）
+      console.log('📋 方法2: 使用 bundle-id 过滤查询指定套餐');
+      const bundleReq = {
+        Filters: [{ Name: 'bundle-id', Values: [bundleId] }],
+      };
+      const bundleResp = await this.client.DescribeBundles(bundleReq);
+      
+      if (bundleResp.BundleSet && bundleResp.BundleSet.length > 0) {
+        const bundle = bundleResp.BundleSet[0];
+        console.log(`✅ 直接查询套餐ID找到: ${bundleId}`);
+        console.log(`   状态: ${bundle.BundleSalesState}`);
+        console.log(`   标题: ${bundle.BundleDisplayTitle || 'N/A'}`);
+        console.log(`   类型: ${bundle.BundleType || 'N/A'}`);
+      } else {
+        console.log(`❌ 直接查询套餐ID未找到: ${bundleId}`);
+      }
+      
+      console.log('\n' + '='.repeat(60));
+      
+      // 对比结果
+      if (razorBundle && bundleResp.BundleSet && bundleResp.BundleSet.length > 0) {
+        const bundle = bundleResp.BundleSet[0];
+        if (razorBundle.BundleSalesState !== bundle.BundleSalesState) {
+          console.log('⚠️  警告: 两种查询方式返回的状态不一致!');
+          console.log(`   锐驰型列表查询: ${razorBundle.BundleSalesState}`);
+          console.log(`   直接套餐查询: ${bundle.BundleSalesState}`);
+        } else {
+          console.log('✅ 两种查询方式返回的状态一致');
+        }
+      }
+      
+    } catch (error) {
+      console.error('❌ 调试过程中发生错误:', error.message);
     }
   }
 }

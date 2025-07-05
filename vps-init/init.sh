@@ -324,8 +324,8 @@ install_acme() {
     "$ACME_DIR"/acme.sh --upgrade
 
     # 检查是否需要重新配置邮箱
-    if "$ACME_DIR"/acme.sh --list 2>&1 | grep -q "admin@example.com"; then
-      warn "检测到acme.sh使用默认邮箱，需要重新配置"
+    if "$ACME_DIR"/acme.sh --list 2>&1 | grep -q "admin@example.com" || ! "$ACME_DIR"/acme.sh --list 2>&1 | grep -q "@"; then
+      warn "检测到acme.sh邮箱配置问题，需要重新配置"
       echo -e "${CYAN}=== 重新配置 acme.sh 邮箱 ===${NC}"
       read -p "请输入用于SSL证书管理的邮箱地址: " ACME_EMAIL
       if [[ -z "$ACME_EMAIL" ]]; then
@@ -337,8 +337,21 @@ install_acme() {
         error "邮箱格式不正确: $ACME_EMAIL"
       fi
 
+      # 强制删除旧的账户配置
+      log "删除旧的账户配置..."
+      rm -f "$ACME_DIR"/account.conf
+      rm -f "$ACME_DIR"/ca/letsencrypt/account.json 2>/dev/null || true
+
       # 重新注册账户
+      log "重新注册账户..."
       "$ACME_DIR"/acme.sh --register-account -m "$ACME_EMAIL"
+
+      # 验证注册结果
+      if "$ACME_DIR"/acme.sh --list 2>&1 | grep -q "$ACME_EMAIL"; then
+        log "账户重新注册成功"
+      else
+        error "账户重新注册失败"
+      fi
     fi
   fi
 

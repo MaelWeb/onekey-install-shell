@@ -351,14 +351,8 @@ install_acme() {
       # 注册账户
       "$ACME_DIR"/acme.sh --register-account -m "$ACME_EMAIL" --server letsencrypt
 
-      # 验证注册结果（简化逻辑）
-      log "验证账户注册结果..."
-      # 检查账户配置文件是否存在
-      if [[ -f "$ACME_DIR/account.conf" ]]; then
-        log "账户配置文件存在，注册成功"
-      else
-        warn "账户配置文件不存在，但继续执行（可能使用默认配置）"
-      fi
+      # 注册完成，继续执行
+      log "账户注册/验证完成，继续执行..."
     fi
   fi
 

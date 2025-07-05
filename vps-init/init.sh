@@ -344,14 +344,18 @@ install_acme() {
 
       # 重新注册账户（强制使用Let's Encrypt）
       log "重新注册账户..."
-      "$ACME_DIR"/acme.sh --set-default-ca --server letsencrypt
-      "$ACME_DIR"/acme.sh --register-account -m "$ACME_EMAIL"
+      # 强制设置Let's Encrypt为默认CA
+      "$ACME_DIR"/acme.sh --set-default-ca --server letsencrypt --force
+      # 清理可能存在的ZeroSSL配置
+      rm -f "$ACME_DIR"/ca/zerossl/account.json 2>/dev/null || true
+      # 注册账户
+      "$ACME_DIR"/acme.sh --register-account -m "$ACME_EMAIL" --server letsencrypt
 
-      # 验证注册结果
-      if "$ACME_DIR"/acme.sh --list 2>&1 | grep -q "$ACME_EMAIL" || "$ACME_DIR"/acme.sh --list 2>&1 | grep -q "ACCOUNT_THUMBPRINT"; then
-        log "账户重新注册成功"
+      # 验证注册结果（兼容已注册的情况）
+      if "$ACME_DIR"/acme.sh --list 2>&1 | grep -q "$ACME_EMAIL" || "$ACME_DIR"/acme.sh --list 2>&1 | grep -q "ACCOUNT_THUMBPRINT" || "$ACME_DIR"/acme.sh --list 2>&1 | grep -q "Already registered"; then
+        log "账户注册/验证成功"
       else
-        error "账户重新注册失败"
+        error "账户注册失败"
       fi
     fi
   fi

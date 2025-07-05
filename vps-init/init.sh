@@ -315,6 +315,9 @@ install_acme() {
   # 设置自动更新
   "$ACME_DIR"/acme.sh --upgrade --auto-upgrade
 
+  # 设置默认CA为Let's Encrypt（免费）
+  "$ACME_DIR"/acme.sh --set-default-ca --server letsencrypt
+
   log "acme.sh安装完成"
 }
 
@@ -566,29 +569,87 @@ configure_domain() {
     cp /etc/nginx/ssl/${DOMAIN}.key /etc/nginx/ssl/${DOMAIN}.key.bak.$(date +%Y%m%d_%H%M%S)
   fi
 
-  # 申请SSL证书（幂等）
-  log "申请SSL证书，临时停止nginx以释放80端口..."
+  # 申请SSL证书（确保成功）
+  log "开始申请SSL证书..."
+
+  # 检查证书是否已存在且有效
+  if [[ -f "$ACME_DIR/$DOMAIN/$DOMAIN.cer" ]] && [[ -f "$ACME_DIR/$DOMAIN/$DOMAIN.key" ]]; then
+    log "检测到已存在的证书，验证有效性..."
+    if "$ACME_DIR"/acme.sh --list | grep -q "$DOMAIN"; then
+      log "证书已存在且有效，跳过申请步骤"
+    else
+      log "证书文件存在但无效，重新申请..."
+      rm -rf "$ACME_DIR/$DOMAIN"
+    fi
+  fi
+
+  # 确保nginx停止并释放80端口
+  log "停止nginx以释放80端口..."
   systemctl stop nginx || true
 
-  # 等待端口释放
-  sleep 2
+  # 等待端口完全释放
+  for i in {1..10}; do
+    if ! netstat -tlnp 2>/dev/null | grep -q ":80 "; then
+      log "80端口已释放"
+      break
+    fi
+    log "等待80端口释放... ($i/10)"
+    sleep 1
+  done
 
-  # 申请证书
-  if "$ACME_DIR"/acme.sh --issue -d "$DOMAIN" --standalone --keylength 2048; then
-    log "SSL证书申请成功"
-  else
-    log "SSL证书申请失败，但继续安装流程"
+  # 强制释放80端口（如果还有进程占用）
+  if netstat -tlnp 2>/dev/null | grep -q ":80 "; then
+    log "强制释放80端口..."
+    fuser -k 80/tcp 2>/dev/null || true
+    sleep 2
   fi
+
+  # 申请证书（多次尝试）
+  local cert_success=false
+  for attempt in 1 2 3; do
+    log "尝试申请SSL证书 (第 $attempt 次)..."
+
+    if "$ACME_DIR"/acme.sh --issue -d "$DOMAIN" --standalone --keylength 2048; then
+      log "SSL证书申请成功！"
+      cert_success=true
+      break
+    else
+      log "第 $attempt 次申请失败，等待重试..."
+      sleep 5
+    fi
+  done
 
   # 重新启动nginx
   log "重新启动nginx..."
   systemctl start nginx || true
 
-  # 安装证书（幂等）
-  "$ACME_DIR"/acme.sh --installcert -d "$DOMAIN" \
-    --key-file /etc/nginx/ssl/"$DOMAIN".key \
-    --fullchain-file /etc/nginx/ssl/"$DOMAIN".crt \
-    --reloadcmd "systemctl reload nginx"
+  if [[ "$cert_success" == "true" ]]; then
+    # 验证证书文件存在
+    if [[ -f "$ACME_DIR/$DOMAIN/$DOMAIN.cer" ]] && [[ -f "$ACME_DIR/$DOMAIN/$DOMAIN.key" ]]; then
+      log "证书文件验证成功，开始安装..."
+
+      # 安装证书
+      if "$ACME_DIR"/acme.sh --installcert -d "$DOMAIN" \
+        --key-file /etc/nginx/ssl/"$DOMAIN".key \
+        --fullchain-file /etc/nginx/ssl/"$DOMAIN".crt \
+        --reloadcmd "systemctl reload nginx"; then
+        log "SSL证书安装成功！"
+
+        # 验证安装结果
+        if [[ -f "/etc/nginx/ssl/${DOMAIN}.crt" ]] && [[ -f "/etc/nginx/ssl/${DOMAIN}.key" ]]; then
+          log "证书文件安装验证成功"
+        else
+          error "证书文件安装验证失败"
+        fi
+      else
+        error "SSL证书安装失败"
+      fi
+    else
+      error "证书申请成功但文件不存在，请检查acme.sh配置"
+    fi
+  else
+    error "SSL证书申请失败，请检查域名解析和网络连接"
+  fi
 
   # 配置自动续期
   setup_ssl_auto_renewal

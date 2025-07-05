@@ -234,8 +234,13 @@ EOF
 
   # 幂等清理所有默认站点配置
   log "清理可能存在的冲突配置..."
+  # 清理conf.d目录中的所有默认配置
   rm -f /etc/nginx/conf.d/default.conf /etc/nginx/conf.d/default
+  # 清理sites-enabled和sites-available中的默认配置
   rm -f /etc/nginx/sites-enabled/default /etc/nginx/sites-available/default
+  # 清理可能存在的其他冲突配置
+  find /etc/nginx/conf.d/ -name "*default*" -delete 2>/dev/null || true
+  find /etc/nginx/sites-enabled/ -name "*default*" -delete 2>/dev/null || true
 
   # 创建默认站点配置
   mkdir -p /etc/nginx/sites-available
@@ -286,8 +291,12 @@ EOF
     log "使用 /etc/nginx/sites-available/ 目录结构"
   fi
 
-  # 测试配置
-  nginx -t && systemctl reload nginx
+  # 测试配置并重启服务
+  nginx -t
+  # 清理可能损坏的PID文件
+  rm -f /var/run/nginx.pid
+  # 重启nginx服务
+  systemctl restart nginx
   log "Nginx高性能配置完成"
 }
 

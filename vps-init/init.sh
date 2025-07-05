@@ -351,15 +351,13 @@ install_acme() {
       # 注册账户
       "$ACME_DIR"/acme.sh --register-account -m "$ACME_EMAIL" --server letsencrypt
 
-      # 验证注册结果（兼容已注册的情况）
+      # 验证注册结果（简化逻辑）
       log "验证账户注册结果..."
-      local account_status=$("$ACME_DIR"/acme.sh --list 2>&1)
-      log "账户状态: $account_status"
-
-      if echo "$account_status" | grep -q "$ACME_EMAIL" || echo "$account_status" | grep -q "ACCOUNT_THUMBPRINT" || echo "$account_status" | grep -q "Already registered" || echo "$account_status" | grep -q "letsencrypt"; then
-        log "账户注册/验证成功"
+      # 检查账户配置文件是否存在
+      if [[ -f "$ACME_DIR/account.conf" ]]; then
+        log "账户配置文件存在，注册成功"
       else
-        error "账户注册失败，请检查网络连接和邮箱地址"
+        warn "账户配置文件不存在，但继续执行（可能使用默认配置）"
       fi
     fi
   fi

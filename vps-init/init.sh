@@ -135,9 +135,28 @@ create_nginx_config() {
     WORKER_CONNECTIONS=8192
   fi
 
+  # 检测nginx用户
+  NGINX_USER="nginx"
+  if ! id "nginx" &>/dev/null; then
+    # 尝试常见的nginx用户名
+    for user in "www-data" "apache" "httpd" "nginx"; do
+      if id "$user" &>/dev/null; then
+        NGINX_USER="$user"
+        log "使用nginx用户: $NGINX_USER"
+        break
+      fi
+    done
+
+    # 如果都没有找到，使用当前用户
+    if [[ "$NGINX_USER" == "nginx" ]]; then
+      NGINX_USER=$(whoami)
+      log "未找到nginx用户，使用当前用户: $NGINX_USER"
+    fi
+  fi
+
   # 创建主配置文件
   cat >/etc/nginx/nginx.conf <<EOF
-user nginx;
+user $NGINX_USER;
 worker_processes $WORKER_PROCESSES;
 worker_cpu_affinity auto;
 worker_rlimit_nofile 65535;
@@ -207,7 +226,38 @@ EOF
   mkdir -p /etc/nginx/sites-available
   mkdir -p /etc/nginx/sites-enabled
 
-  cat >/etc/nginx/sites-available/default <<EOF
+  # 检查是否存在默认配置目录
+  if [[ -d "/etc/nginx/conf.d" ]]; then
+    # 使用conf.d目录
+    cat >/etc/nginx/conf.d/default.conf <<EOF
+server {
+    listen 80;
+    listen [::]:80;
+    server_name _;
+    
+    root /var/www/html;
+    index index.html index.htm index.php;
+    
+    location / {
+        try_files \$uri \$uri/ =404;
+    }
+    
+    # 禁止访问隐藏文件
+    location ~ /\. {
+        deny all;
+    }
+    
+    # PHP支持（如果需要）
+    location ~ \.php$ {
+        include snippets/fastcgi-php.conf;
+        fastcgi_pass unix:/var/run/php/php8.1-fpm.sock;
+    }
+}
+EOF
+    log "使用 /etc/nginx/conf.d/ 目录结构"
+  else
+    # 使用sites-available/sites-enabled目录
+    cat >/etc/nginx/sites-available/default <<EOF
 server {
     listen 80;
     listen [::]:80;
@@ -233,8 +283,10 @@ server {
 }
 EOF
 
-  # 启用默认站点
-  ln -sf /etc/nginx/sites-available/default /etc/nginx/sites-enabled/
+    # 启用默认站点
+    ln -sf /etc/nginx/sites-available/default /etc/nginx/sites-enabled/
+    log "使用 /etc/nginx/sites-available/ 目录结构"
+  fi
 
   # 测试配置
   nginx -t

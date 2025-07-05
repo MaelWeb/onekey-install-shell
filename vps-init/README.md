@@ -52,10 +52,10 @@ git clone https://github.com/MaelWeb/onekey-install-shell.git
 cd onekey-install-shell/vps-init
 
 # 或直接下载脚本
-wget https://raw.githubusercontent.com/MaelWeb/onekey-install-shell/main/vps-init/init.sh
+wget https://raw.githubusercontent.com/MaelWeb/onekey-install-shell/refs/heads/master/vps-init/init.sh
 
 # 或
-bash <(curl -Ls https://raw.githubusercontent.com/MaelWeb/onekey-install-shell/main/vps-init/init.sh)
+bash <(curl -Ls https://raw.githubusercontent.com/MaelWeb/onekey-install-shell/refs/heads/master/vps-init/init.sh)
 ```
 
 ### 2. 执行安装

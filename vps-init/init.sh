@@ -384,13 +384,20 @@ check_ssl_prerequisites() {
   # 3. 检查80端口是否可用
   log "检查80端口可用性..."
   if netstat -tlnp 2>/dev/null | grep -q ":80 "; then
-    local port80_process=$(netstat -tlnp 2>/dev/null | grep ":80 " | awk '{print $7}' | cut -d'/' -f2)
-    if [[ "$port80_process" == "nginx" ]]; then
+    # 获取占用80端口的进程信息
+    local port80_info=$(netstat -tlnp 2>/dev/null | grep ":80 " | head -1)
+    log "80端口信息: $port80_info"
+
+    # 检查是否是nginx进程
+    if echo "$port80_info" | grep -q "nginx"; then
       log "80端口被nginx占用，申请证书时会临时停止nginx"
-    elif [[ -n "$port80_process" ]]; then
-      error "80端口被 $port80_process 占用，acme.sh需要80端口进行域名验证"
     else
-      log "80端口可用"
+      local port80_process=$(echo "$port80_info" | awk '{print $7}' | cut -d'/' -f2)
+      if [[ -n "$port80_process" ]]; then
+        error "80端口被 $port80_process 占用，acme.sh需要80端口进行域名验证"
+      else
+        log "80端口可用"
+      fi
     fi
   else
     log "80端口可用"

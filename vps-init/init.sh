@@ -342,12 +342,13 @@ install_acme() {
       rm -f "$ACME_DIR"/account.conf
       rm -f "$ACME_DIR"/ca/letsencrypt/account.json 2>/dev/null || true
 
-      # 重新注册账户
+      # 重新注册账户（强制使用Let's Encrypt）
       log "重新注册账户..."
+      "$ACME_DIR"/acme.sh --set-default-ca --server letsencrypt
       "$ACME_DIR"/acme.sh --register-account -m "$ACME_EMAIL"
 
       # 验证注册结果
-      if "$ACME_DIR"/acme.sh --list 2>&1 | grep -q "$ACME_EMAIL"; then
+      if "$ACME_DIR"/acme.sh --list 2>&1 | grep -q "$ACME_EMAIL" || "$ACME_DIR"/acme.sh --list 2>&1 | grep -q "ACCOUNT_THUMBPRINT"; then
         log "账户重新注册成功"
       else
         error "账户重新注册失败"
@@ -359,7 +360,15 @@ install_acme() {
   "$ACME_DIR"/acme.sh --upgrade --auto-upgrade
 
   # 设置默认CA为Let's Encrypt（免费）
+  log "设置默认CA为Let's Encrypt..."
   "$ACME_DIR"/acme.sh --set-default-ca --server letsencrypt
+
+  # 验证CA设置
+  if "$ACME_DIR"/acme.sh --list 2>&1 | grep -q "letsencrypt"; then
+    log "Let's Encrypt CA设置成功"
+  else
+    warn "Let's Encrypt CA设置可能失败，将使用默认CA"
+  fi
 
   log "acme.sh安装完成"
 }

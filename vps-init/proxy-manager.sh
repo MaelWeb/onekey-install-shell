@@ -70,12 +70,13 @@ show_menu() {
   echo "1. 添加子域名代理"
   echo "2. 添加路径代理"
   echo "3. 查看现有代理配置"
-  echo "4. 删除代理配置"
-  echo "5. 重新生成所有代理配置"
-  echo "6. 测试代理配置"
-  echo "7. 备份代理配置"
-  echo "8. 恢复代理配置"
-  echo "9. 退出"
+  echo "4. 编辑代理配置"
+  echo "5. 删除代理配置"
+  echo "6. 重新生成所有代理配置"
+  echo "7. 测试代理配置"
+  echo "8. 备份代理配置"
+  echo "9. 恢复代理配置"
+  echo "10. 退出"
   echo
 }
 
@@ -398,26 +399,221 @@ show_proxy_configs() {
   echo -e "${CYAN}=== 现有代理配置 ===${NC}"
   echo
 
+  # 子域名代理详细信息
   echo -e "${YELLOW}子域名代理:${NC}"
+  local subdomain_count=0
   for config in /etc/nginx/sites-enabled/*; do
     if [[ -L "$config" ]] && [[ "$(basename "$config")" != "default" ]] && [[ "$(basename "$config")" != "path-proxy" ]]; then
       local subdomain=$(basename "$config")
-      echo "  - $subdomain.$DOMAIN"
+      local config_file="/etc/nginx/sites-available/$subdomain"
+
+      if [[ -f "$config_file" ]]; then
+        # 提取后端地址
+        local backend=$(grep -o "proxy_pass http://[^;]*" "$config_file" | head -1 | sed 's/proxy_pass http:////')
+        # 检查SSL配置
+        local has_ssl=""
+        if grep -q "listen 443" "$config_file"; then
+          has_ssl=" (SSL)"
+        fi
+        # 检查WebSocket支持
+        local has_ws=""
+        if grep -q "Upgrade" "$config_file"; then
+          has_ws=" (WebSocket)"
+        fi
+
+        echo "  $((++subdomain_count)). $subdomain.$DOMAIN -> $backend$has_ssl$has_ws"
+      else
+        echo "  $((++subdomain_count)). $subdomain.$DOMAIN (配置文件缺失)"
+      fi
     fi
   done
 
-  echo
-  echo -e "${YELLOW}路径代理:${NC}"
-  if [[ -f "/etc/nginx/sites-available/path-proxy" ]]; then
-    grep -E "^[[:space:]]*location[[:space:]]+/" /etc/nginx/sites-available/path-proxy | while read -r line; do
-      local path=$(echo "$line" | sed 's/^[[:space:]]*location[[:space:]]*//' | sed 's/[[:space:]]*{.*$//')
-      echo "  - $DOMAIN$path"
-    done
+  if [[ $subdomain_count -eq 0 ]]; then
+    echo "  暂无子域名代理配置"
   fi
 
   echo
-  echo -e "${YELLOW}启用的站点:${NC}"
-  ls -la /etc/nginx/sites-enabled/
+  # 路径代理详细信息
+  echo -e "${YELLOW}路径代理:${NC}"
+  local path_count=0
+  if [[ -f "/etc/nginx/sites-available/path-proxy" ]]; then
+    # 解析路径代理配置
+    local current_path=""
+    local current_backend=""
+    local current_ws=""
+
+    while IFS= read -r line; do
+      if [[ "$line" =~ ^[[:space:]]*location[[:space:]]+/ ]]; then
+        current_path=$(echo "$line" | sed 's/^[[:space:]]*location[[:space:]]*//' | sed 's/[[:space:]]*{.*$//')
+      elif [[ "$line" =~ proxy_pass[[:space:]]+http:// ]]; then
+        current_backend=$(echo "$line" | sed 's/^[[:space:]]*proxy_pass[[:space:]]*http:\/\///' | sed 's/;.*$//')
+      elif [[ "$line" =~ Upgrade ]]; then
+        current_ws=" (WebSocket)"
+      elif [[ "$line" =~ ^[[:space:]]*}[[:space:]]*$ ]] && [[ -n "$current_path" ]] && [[ -n "$current_backend" ]]; then
+        echo "  $((++path_count)). $DOMAIN$current_path -> $current_backend$current_ws"
+        current_path=""
+        current_backend=""
+        current_ws=""
+      fi
+    done <"/etc/nginx/sites-available/path-proxy"
+  fi
+
+  if [[ $path_count -eq 0 ]]; then
+    echo "  暂无路径代理配置"
+  fi
+
+  echo
+  # 配置统计
+  echo -e "${YELLOW}配置统计:${NC}"
+  echo "  子域名代理: $subdomain_count 个"
+  echo "  路径代理: $path_count 个"
+  echo "  总计: $((subdomain_count + path_count)) 个代理配置"
+
+  echo
+  # 服务状态
+  echo -e "${YELLOW}服务状态:${NC}"
+  if systemctl is-active --quiet nginx; then
+    echo -e "  Nginx: ${GREEN}运行中${NC}"
+  else
+    echo -e "  Nginx: ${RED}未运行${NC}"
+  fi
+
+  # 端口监听状态
+  if netstat -tuln 2>/dev/null | grep -q ":80 "; then
+    echo -e "  端口80: ${GREEN}监听中${NC}"
+  else
+    echo -e "  端口80: ${RED}未监听${NC}"
+  fi
+
+  if netstat -tuln 2>/dev/null | grep -q ":443 "; then
+    echo -e "  端口443: ${GREEN}监听中${NC}"
+  else
+    echo -e "  端口443: ${YELLOW}未监听${NC}"
+  fi
+
+  echo
+  echo -e "${YELLOW}启用的站点配置:${NC}"
+  ls -la /etc/nginx/sites-enabled/ | grep -v "^total"
+}
+
+# 编辑代理配置
+edit_proxy_config() {
+  echo -e "${CYAN}=== 编辑代理配置 ===${NC}"
+  echo
+  echo "请选择要编辑的配置类型:"
+  echo "1. 编辑子域名代理"
+  echo "2. 编辑路径代理"
+  echo "3. 返回主菜单"
+
+  read -p "请选择 (1-3): " choice
+
+  case $choice in
+  1)
+    edit_subdomain_proxy
+    ;;
+  2)
+    edit_path_proxy
+    ;;
+  3)
+    return
+    ;;
+  *)
+    echo -e "${RED}无效选择${NC}"
+    ;;
+  esac
+}
+
+# 编辑子域名代理
+edit_subdomain_proxy() {
+  echo -e "${YELLOW}现有子域名代理:${NC}"
+  local count=0
+  local subdomains=()
+
+  for config in /etc/nginx/sites-enabled/*; do
+    if [[ -L "$config" ]] && [[ "$(basename "$config")" != "default" ]] && [[ "$(basename "$config")" != "path-proxy" ]]; then
+      local subdomain=$(basename "$config")
+      subdomains+=("$subdomain")
+      echo "$((++count)). $subdomain.$DOMAIN"
+    fi
+  done
+
+  if [[ $count -eq 0 ]]; then
+    echo "没有找到子域名代理配置"
+    return
+  fi
+
+  read -p "请选择要编辑的配置 (1-$count): " choice
+
+  if [[ "$choice" =~ ^[0-9]+$ ]] && [[ $choice -ge 1 ]] && [[ $choice -le $count ]]; then
+    local subdomain=${subdomains[$((choice - 1))]}
+    local config_file="/etc/nginx/sites-available/$subdomain"
+
+    echo -e "${CYAN}编辑配置: $subdomain.$DOMAIN${NC}"
+    echo "当前配置:"
+    cat "$config_file"
+    echo
+
+    read -p "是否要编辑此配置? (y/N): " -n 1 -r
+    echo
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+      # 使用编辑器编辑配置
+      if command -v nano >/dev/null 2>&1; then
+        nano "$config_file"
+      elif command -v vim >/dev/null 2>&1; then
+        vim "$config_file"
+      elif command -v vi >/dev/null 2>&1; then
+        vi "$config_file"
+      else
+        error "未找到可用的文本编辑器 (nano/vim/vi)"
+      fi
+
+      # 测试并重载配置
+      if nginx -t; then
+        systemctl reload nginx
+        log "配置已更新并重载"
+      else
+        error "配置语法错误，请检查修改"
+      fi
+    fi
+  else
+    echo -e "${RED}无效选择${NC}"
+  fi
+}
+
+# 编辑路径代理
+edit_path_proxy() {
+  if [[ ! -f "/etc/nginx/sites-available/path-proxy" ]]; then
+    echo "没有找到路径代理配置"
+    return
+  fi
+
+  echo -e "${CYAN}编辑路径代理配置${NC}"
+  echo "当前配置:"
+  cat "/etc/nginx/sites-available/path-proxy"
+  echo
+
+  read -p "是否要编辑此配置? (y/N): " -n 1 -r
+  echo
+  if [[ $REPLY =~ ^[Yy]$ ]]; then
+    # 使用编辑器编辑配置
+    if command -v nano >/dev/null 2>&1; then
+      nano "/etc/nginx/sites-available/path-proxy"
+    elif command -v vim >/dev/null 2>&1; then
+      vim "/etc/nginx/sites-available/path-proxy"
+    elif command -v vi >/dev/null 2>&1; then
+      vi "/etc/nginx/sites-available/path-proxy"
+    else
+      error "未找到可用的文本编辑器 (nano/vim/vi)"
+    fi
+
+    # 测试并重载配置
+    if nginx -t; then
+      systemctl reload nginx
+      log "配置已更新并重载"
+    else
+      error "配置语法错误，请检查修改"
+    fi
+  fi
 }
 
 # 删除代理配置
@@ -670,21 +866,24 @@ main() {
       show_proxy_configs
       ;;
     4)
-      delete_proxy_config
+      edit_proxy_config
       ;;
     5)
-      regenerate_proxy_configs
+      delete_proxy_config
       ;;
     6)
-      test_proxy_configs
+      regenerate_proxy_configs
       ;;
     7)
-      backup_proxy_configs
+      test_proxy_configs
       ;;
     8)
-      restore_proxy_configs
+      backup_proxy_configs
       ;;
     9)
+      restore_proxy_configs
+      ;;
+    10)
       echo -e "${GREEN}退出管理工具${NC}"
       exit 0
       ;;

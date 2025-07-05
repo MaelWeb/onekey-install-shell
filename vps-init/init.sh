@@ -24,6 +24,28 @@ NGINX_CONF_DIR="/etc/nginx"
 ACME_DIR="/root/.acme.sh"
 XUI_PORT="54321"
 
+# 自动下载依赖脚本
+download_dependencies() {
+  log "检查并下载依赖脚本..."
+
+  local base_url="https://raw.githubusercontent.com/MaelWeb/onekey-install-shell/refs/heads/master/vps-init"
+  local dependencies=("proxy-manager.sh" "ssl-check.sh")
+
+  for dep in "${dependencies[@]}"; do
+    if [[ ! -f "$SCRIPT_DIR/$dep" ]]; then
+      log "下载依赖脚本: $dep"
+      if curl -s -o "$SCRIPT_DIR/$dep" "$base_url/$dep"; then
+        chmod +x "$SCRIPT_DIR/$dep"
+        log "成功下载: $dep"
+      else
+        warn "下载失败: $dep，相关功能可能不可用"
+      fi
+    else
+      log "依赖脚本已存在: $dep"
+    fi
+  done
+}
+
 # 日志函数
 log() {
   echo -e "${GREEN}[$(date '+%Y-%m-%d %H:%M:%S')] $1${NC}" | tee -a "$LOG_FILE"
@@ -1359,10 +1381,19 @@ EOF
   chmod +x /usr/local/bin/vps-manager
   log "管理脚本创建完成，使用: vps-manager {status|restart|logs|ssl-renew|backup|proxy}"
 
-  # 幂等复制代理管理脚本到系统目录
-  cp -f "$SCRIPT_DIR/proxy-manager.sh" /usr/local/bin/proxy-manager
-  chmod +x /usr/local/bin/proxy-manager
-  log "代理管理工具已安装，使用: proxy-manager 或 vps-manager proxy"
+  # 幂等复制代理管理脚本到系统目录（如果存在）
+  if [[ -f "$SCRIPT_DIR/proxy-manager.sh" ]]; then
+    cp -f "$SCRIPT_DIR/proxy-manager.sh" /usr/local/bin/proxy-manager
+    chmod +x /usr/local/bin/proxy-manager
+    log "代理管理工具已安装，使用: proxy-manager 或 vps-manager proxy"
+  elif [[ -f "/root/vps-init/proxy-manager.sh" ]]; then
+    cp -f "/root/vps-init/proxy-manager.sh" /usr/local/bin/proxy-manager
+    chmod +x /usr/local/bin/proxy-manager
+    log "代理管理工具已安装，使用: proxy-manager 或 vps-manager proxy"
+  else
+    warn "proxy-manager.sh 文件不存在，跳过代理管理工具安装"
+    log "如需代理管理功能，请下载完整项目或手动创建 proxy-manager.sh"
+  fi
 }
 
 # 显示安装信息
@@ -1418,6 +1449,9 @@ main() {
 
   # 检查系统
   check_system
+
+  # 自动下载依赖脚本
+  download_dependencies
 
   # 更新系统
   update_system

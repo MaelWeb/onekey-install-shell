@@ -352,10 +352,14 @@ install_acme() {
       "$ACME_DIR"/acme.sh --register-account -m "$ACME_EMAIL" --server letsencrypt
 
       # 验证注册结果（兼容已注册的情况）
-      if "$ACME_DIR"/acme.sh --list 2>&1 | grep -q "$ACME_EMAIL" || "$ACME_DIR"/acme.sh --list 2>&1 | grep -q "ACCOUNT_THUMBPRINT" || "$ACME_DIR"/acme.sh --list 2>&1 | grep -q "Already registered"; then
+      log "验证账户注册结果..."
+      local account_status=$("$ACME_DIR"/acme.sh --list 2>&1)
+      log "账户状态: $account_status"
+
+      if echo "$account_status" | grep -q "$ACME_EMAIL" || echo "$account_status" | grep -q "ACCOUNT_THUMBPRINT" || echo "$account_status" | grep -q "Already registered" || echo "$account_status" | grep -q "letsencrypt"; then
         log "账户注册/验证成功"
       else
-        error "账户注册失败"
+        error "账户注册失败，请检查网络连接和邮箱地址"
       fi
     fi
   fi

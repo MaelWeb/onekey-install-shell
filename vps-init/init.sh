@@ -575,7 +575,7 @@ check_ssl_prerequisites() {
     fi
   fi
 
-  # 11. 检查证书是否已存在
+  # 11. 检查证书是否已存在（仅检查，不询问）
   if [[ -f "/etc/nginx/ssl/${domain}.crt" ]]; then
     local cert_expiry=$(openssl x509 -in "/etc/nginx/ssl/${domain}.crt" -noout -enddate 2>/dev/null | cut -d= -f2)
     if [[ -n "$cert_expiry" ]]; then
@@ -584,13 +584,7 @@ check_ssl_prerequisites() {
       local days_until_expiry=$(((expiry_timestamp - current_timestamp) / 86400))
 
       if [[ $days_until_expiry -gt 30 ]]; then
-        warn "域名 $domain 的SSL证书已存在且有效期还有 $days_until_expiry 天"
-        read -p "是否重新申请证书? (y/N): " -n 1 -r
-        echo
-        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-          log "跳过证书申请"
-          return 0
-        fi
+        log "域名 $domain 的SSL证书已存在且有效期还有 $days_until_expiry 天"
       else
         log "证书即将过期，将重新申请"
       fi
@@ -628,101 +622,127 @@ configure_domain() {
   fi
 
   # 检查SSL证书申请前置条件
+  local should_apply_cert=true
   if ! check_ssl_prerequisites "$DOMAIN"; then
     return
+  fi
+
+  # 检查是否需要申请证书
+  if [[ -f "/etc/nginx/ssl/${DOMAIN}.crt" ]]; then
+    local cert_expiry=$(openssl x509 -in "/etc/nginx/ssl/${DOMAIN}.crt" -noout -enddate 2>/dev/null | cut -d= -f2)
+    if [[ -n "$cert_expiry" ]]; then
+      local expiry_timestamp=$(date -d "$cert_expiry" +%s 2>/dev/null)
+      local current_timestamp=$(date +%s)
+      local days_until_expiry=$(((expiry_timestamp - current_timestamp) / 86400))
+
+      if [[ $days_until_expiry -gt 30 ]]; then
+        warn "域名 $DOMAIN 的SSL证书已存在且有效期还有 $days_until_expiry 天"
+        read -p "是否重新申请证书? (y/N): " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+          log "跳过证书申请"
+          should_apply_cert=false
+        fi
+      fi
+    fi
   fi
 
   # 创建SSL配置目录
   mkdir -p /etc/nginx/ssl
 
-  # 证书文件存在则备份
-  if [[ -f "/etc/nginx/ssl/${DOMAIN}.crt" ]]; then
-    cp /etc/nginx/ssl/${DOMAIN}.crt /etc/nginx/ssl/${DOMAIN}.crt.bak.$(date +%Y%m%d_%H%M%S)
-  fi
-  if [[ -f "/etc/nginx/ssl/${DOMAIN}.key" ]]; then
-    cp /etc/nginx/ssl/${DOMAIN}.key /etc/nginx/ssl/${DOMAIN}.key.bak.$(date +%Y%m%d_%H%M%S)
-  fi
-
-  # 申请SSL证书（确保成功）
-  log "开始申请SSL证书..."
-
-  # 检查证书是否已存在且有效
-  if [[ -f "$ACME_DIR/$DOMAIN/$DOMAIN.cer" ]] && [[ -f "$ACME_DIR/$DOMAIN/$DOMAIN.key" ]]; then
-    log "检测到已存在的证书，验证有效性..."
-    if "$ACME_DIR"/acme.sh --list | grep -q "$DOMAIN"; then
-      log "证书已存在且有效，跳过申请步骤"
-    else
-      log "证书文件存在但无效，重新申请..."
-      rm -rf "$ACME_DIR/$DOMAIN"
+  # 如果需要申请证书
+  if [[ "$should_apply_cert" == "true" ]]; then
+    # 证书文件存在则备份
+    if [[ -f "/etc/nginx/ssl/${DOMAIN}.crt" ]]; then
+      cp /etc/nginx/ssl/${DOMAIN}.crt /etc/nginx/ssl/${DOMAIN}.crt.bak.$(date +%Y%m%d_%H%M%S)
     fi
-  fi
-
-  # 确保nginx停止并释放80端口
-  log "停止nginx以释放80端口..."
-  systemctl stop nginx || true
-
-  # 等待端口完全释放
-  for i in {1..10}; do
-    if ! netstat -tlnp 2>/dev/null | grep -q ":80 "; then
-      log "80端口已释放"
-      break
+    if [[ -f "/etc/nginx/ssl/${DOMAIN}.key" ]]; then
+      cp /etc/nginx/ssl/${DOMAIN}.key /etc/nginx/ssl/${DOMAIN}.key.bak.$(date +%Y%m%d_%H%M%S)
     fi
-    log "等待80端口释放... ($i/10)"
-    sleep 1
-  done
 
-  # 强制释放80端口（如果还有进程占用）
-  if netstat -tlnp 2>/dev/null | grep -q ":80 "; then
-    log "强制释放80端口..."
-    fuser -k 80/tcp 2>/dev/null || true
-    sleep 2
-  fi
+    # 申请SSL证书（确保成功）
+    log "开始申请SSL证书..."
 
-  # 申请证书（多次尝试）
-  local cert_success=false
-  for attempt in 1 2 3; do
-    log "尝试申请SSL证书 (第 $attempt 次)..."
-
-    if "$ACME_DIR"/acme.sh --issue -d "$DOMAIN" --standalone --keylength 2048; then
-      log "SSL证书申请成功！"
-      cert_success=true
-      break
-    else
-      log "第 $attempt 次申请失败，等待重试..."
-      sleep 5
-    fi
-  done
-
-  # 重新启动nginx
-  log "重新启动nginx..."
-  systemctl start nginx || true
-
-  if [[ "$cert_success" == "true" ]]; then
-    # 验证证书文件存在
+    # 检查证书是否已存在且有效
     if [[ -f "$ACME_DIR/$DOMAIN/$DOMAIN.cer" ]] && [[ -f "$ACME_DIR/$DOMAIN/$DOMAIN.key" ]]; then
-      log "证书文件验证成功，开始安装..."
+      log "检测到已存在的证书，验证有效性..."
+      if "$ACME_DIR"/acme.sh --list | grep -q "$DOMAIN"; then
+        log "证书已存在且有效，跳过申请步骤"
+      else
+        log "证书文件存在但无效，重新申请..."
+        rm -rf "$ACME_DIR/$DOMAIN"
+      fi
+    fi
 
-      # 安装证书
-      if "$ACME_DIR"/acme.sh --installcert -d "$DOMAIN" \
-        --key-file /etc/nginx/ssl/"$DOMAIN".key \
-        --fullchain-file /etc/nginx/ssl/"$DOMAIN".crt \
-        --reloadcmd "systemctl reload nginx"; then
-        log "SSL证书安装成功！"
+    # 确保nginx停止并释放80端口
+    log "停止nginx以释放80端口..."
+    systemctl stop nginx || true
 
-        # 验证安装结果
-        if [[ -f "/etc/nginx/ssl/${DOMAIN}.crt" ]] && [[ -f "/etc/nginx/ssl/${DOMAIN}.key" ]]; then
-          log "证书文件安装验证成功"
+    # 等待端口完全释放
+    for i in {1..10}; do
+      if ! netstat -tlnp 2>/dev/null | grep -q ":80 "; then
+        log "80端口已释放"
+        break
+      fi
+      log "等待80端口释放... ($i/10)"
+      sleep 1
+    done
+
+    # 强制释放80端口（如果还有进程占用）
+    if netstat -tlnp 2>/dev/null | grep -q ":80 "; then
+      log "强制释放80端口..."
+      fuser -k 80/tcp 2>/dev/null || true
+      sleep 2
+    fi
+
+    # 申请证书（多次尝试）
+    local cert_success=false
+    for attempt in 1 2 3; do
+      log "尝试申请SSL证书 (第 $attempt 次)..."
+
+      if "$ACME_DIR"/acme.sh --issue -d "$DOMAIN" --standalone --keylength 2048; then
+        log "SSL证书申请成功！"
+        cert_success=true
+        break
+      else
+        log "第 $attempt 次申请失败，等待重试..."
+        sleep 5
+      fi
+    done
+
+    # 重新启动nginx
+    log "重新启动nginx..."
+    systemctl start nginx || true
+
+    if [[ "$cert_success" == "true" ]]; then
+      # 验证证书文件存在
+      if [[ -f "$ACME_DIR/$DOMAIN/$DOMAIN.cer" ]] && [[ -f "$ACME_DIR/$DOMAIN/$DOMAIN.key" ]]; then
+        log "证书文件验证成功，开始安装..."
+
+        # 安装证书
+        if "$ACME_DIR"/acme.sh --installcert -d "$DOMAIN" \
+          --key-file /etc/nginx/ssl/"$DOMAIN".key \
+          --fullchain-file /etc/nginx/ssl/"$DOMAIN".crt \
+          --reloadcmd "systemctl reload nginx"; then
+          log "SSL证书安装成功！"
+
+          # 验证安装结果
+          if [[ -f "/etc/nginx/ssl/${DOMAIN}.crt" ]] && [[ -f "/etc/nginx/ssl/${DOMAIN}.key" ]]; then
+            log "证书文件安装验证成功"
+          else
+            error "证书文件安装验证失败"
+          fi
         else
-          error "证书文件安装验证失败"
+          error "SSL证书安装失败"
         fi
       else
-        error "SSL证书安装失败"
+        error "证书申请成功但文件不存在，请检查acme.sh配置"
       fi
     else
-      error "证书申请成功但文件不存在，请检查acme.sh配置"
+      error "SSL证书申请失败，请检查域名解析和网络连接"
     fi
   else
-    error "SSL证书申请失败，请检查域名解析和网络连接"
+    log "跳过SSL证书申请"
   fi
 
   # 配置自动续期

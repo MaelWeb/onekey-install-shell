@@ -83,15 +83,30 @@ check_system() {
 update_system() {
   log "更新系统包..."
 
+  # 检查包管理器锁
+  if lsof /var/lib/dpkg/lock-frontend &>/dev/null; then
+    warn "dpkg 正在被其他进程占用，等待释放..."
+    while lsof /var/lib/dpkg/lock-frontend &>/dev/null; do sleep 1; done
+  fi
+
   case $ID in
   ubuntu | debian)
     apt update -y
     apt upgrade -y
-    apt install -y curl wget git unzip software-properties-common
+    # 只安装缺失的依赖
+    for pkg in curl wget git unzip software-properties-common; do
+      if ! dpkg -s $pkg &>/dev/null; then
+        apt install -y $pkg
+      fi
+    done
     ;;
   centos | rhel | almalinux | rocky)
     yum update -y
-    yum install -y curl wget git unzip epel-release
+    for pkg in curl wget git unzip epel-release; do
+      if ! rpm -q $pkg &>/dev/null; then
+        yum install -y $pkg
+      fi
+    done
     ;;
   esac
 }
@@ -100,20 +115,24 @@ update_system() {
 install_nginx() {
   log "安装Nginx..."
 
-  case $ID in
-  ubuntu | debian)
-    apt install -y nginx
-    systemctl enable nginx
-    systemctl start nginx
-    ;;
-  centos | rhel | almalinux | rocky)
-    yum install -y nginx
-    systemctl enable nginx
-    systemctl start nginx
-    ;;
-  esac
+  # 检查是否已安装
+  if ! command -v nginx &>/dev/null; then
+    case $ID in
+    ubuntu | debian)
+      apt install -y nginx
+      ;;
+    centos | rhel | almalinux | rocky)
+      yum install -y nginx
+      ;;
+    esac
+  else
+    log "Nginx 已安装，跳过安装"
+  fi
 
-  # 创建高性能nginx配置
+  systemctl enable nginx || true
+  systemctl start nginx || true
+
+  # 创建高性能nginx配置（幂等）
   create_nginx_config
 }
 
@@ -138,7 +157,6 @@ create_nginx_config() {
   # 检测nginx用户
   NGINX_USER="nginx"
   if ! id "nginx" &>/dev/null; then
-    # 尝试常见的nginx用户名
     for user in "www-data" "apache" "httpd" "nginx"; do
       if id "$user" &>/dev/null; then
         NGINX_USER="$user"
@@ -146,15 +164,18 @@ create_nginx_config() {
         break
       fi
     done
-
-    # 如果都没有找到，使用当前用户
     if [[ "$NGINX_USER" == "nginx" ]]; then
       NGINX_USER=$(whoami)
       log "未找到nginx用户，使用当前用户: $NGINX_USER"
     fi
   fi
 
-  # 创建主配置文件
+  # 备份主配置文件
+  if [[ -f /etc/nginx/nginx.conf ]]; then
+    cp /etc/nginx/nginx.conf /etc/nginx/nginx.conf.bak.$(date +%Y%m%d_%H%M%S)
+  fi
+
+  # 创建主配置文件（幂等）
   cat >/etc/nginx/nginx.conf <<EOF
 user $NGINX_USER;
 worker_processes $WORKER_PROCESSES;
@@ -175,22 +196,16 @@ http {
     include /etc/nginx/mime.types;
     default_type application/octet-stream;
     
-    # 日志格式
     log_format main '\$remote_addr - \$remote_user [\$time_local] "\$request" '
                     '\$status \$body_bytes_sent "\$http_referer" '
                     '"\$http_user_agent" "\$http_x_forwarded_for"';
-    
     access_log /var/log/nginx/access.log main;
-    
-    # 基础优化
     sendfile on;
     tcp_nopush on;
     tcp_nodelay on;
     keepalive_timeout 65;
     types_hash_max_size 2048;
     client_max_body_size 100M;
-    
-    # Gzip压缩
     gzip on;
     gzip_vary on;
     gzip_min_length 1024;
@@ -206,48 +221,40 @@ http {
         application/xml+rss
         application/atom+xml
         image/svg+xml;
-    
-    # 安全头
     add_header X-Frame-Options DENY;
     add_header X-Content-Type-Options nosniff;
     add_header X-XSS-Protection "1; mode=block";
     add_header Referrer-Policy "strict-origin-when-cross-origin";
-    
-    # 隐藏版本号
     server_tokens off;
-    
-    # 包含站点配置
+    # 包含站点配置（只包含存在的目录）
     include /etc/nginx/conf.d/*.conf;
     include /etc/nginx/sites-enabled/*;
 }
 EOF
 
+  # 幂等清理所有默认站点配置
+  log "清理可能存在的冲突配置..."
+  rm -f /etc/nginx/conf.d/default.conf /etc/nginx/conf.d/default
+  rm -f /etc/nginx/sites-enabled/default /etc/nginx/sites-available/default
+
   # 创建默认站点配置
   mkdir -p /etc/nginx/sites-available
   mkdir -p /etc/nginx/sites-enabled
 
-  # 检查是否存在默认配置目录
   if [[ -d "/etc/nginx/conf.d" ]]; then
-    # 使用conf.d目录
     cat >/etc/nginx/conf.d/default.conf <<EOF
 server {
     listen 80;
     listen [::]:80;
     server_name _;
-    
     root /var/www/html;
     index index.html index.htm index.php;
-    
     location / {
         try_files \$uri \$uri/ =404;
     }
-    
-    # 禁止访问隐藏文件
     location ~ /\. {
         deny all;
     }
-    
-    # PHP支持（如果需要）
     location ~ \.php$ {
         include snippets/fastcgi-php.conf;
         fastcgi_pass unix:/var/run/php/php8.1-fpm.sock;
@@ -256,42 +263,31 @@ server {
 EOF
     log "使用 /etc/nginx/conf.d/ 目录结构"
   else
-    # 使用sites-available/sites-enabled目录
     cat >/etc/nginx/sites-available/default <<EOF
 server {
     listen 80;
     listen [::]:80;
     server_name _;
-    
     root /var/www/html;
     index index.html index.htm index.php;
-    
     location / {
         try_files \$uri \$uri/ =404;
     }
-    
-    # 禁止访问隐藏文件
     location ~ /\. {
         deny all;
     }
-    
-    # PHP支持（如果需要）
     location ~ \.php$ {
         include snippets/fastcgi-php.conf;
         fastcgi_pass unix:/var/run/php/php8.1-fpm.sock;
     }
 }
 EOF
-
-    # 启用默认站点
     ln -sf /etc/nginx/sites-available/default /etc/nginx/sites-enabled/
     log "使用 /etc/nginx/sites-available/ 目录结构"
   fi
 
   # 测试配置
-  nginx -t
-  systemctl reload nginx
-
+  nginx -t && systemctl reload nginx
   log "Nginx高性能配置完成"
 }
 
@@ -303,7 +299,7 @@ install_acme() {
     curl https://get.acme.sh | sh -s email=admin@example.com
     source ~/.bashrc
   else
-    log "acme.sh已安装，更新中..."
+    log "acme.sh已安装，升级中..."
     "$ACME_DIR"/acme.sh --upgrade
   fi
 
@@ -316,6 +312,12 @@ install_acme() {
 # 安装X-UI
 install_xui() {
   log "安装X-UI..."
+
+  # 检查是否已安装
+  if systemctl status x-ui &>/dev/null; then
+    log "X-UI 已安装，跳过安装"
+    return
+  fi
 
   # 使用yonggekkk的x-ui-yg脚本
   bash <(wget -qO- https://raw.githubusercontent.com/yonggekkk/x-ui-yg/main/install.sh)
@@ -538,11 +540,18 @@ configure_domain() {
   # 创建SSL配置目录
   mkdir -p /etc/nginx/ssl
 
-  # 申请SSL证书
-  log "申请SSL证书..."
-  "$ACME_DIR"/acme.sh --issue -d "$DOMAIN" --standalone --keylength 2048
+  # 证书文件存在则备份
+  if [[ -f "/etc/nginx/ssl/${DOMAIN}.crt" ]]; then
+    cp /etc/nginx/ssl/${DOMAIN}.crt /etc/nginx/ssl/${DOMAIN}.crt.bak.$(date +%Y%m%d_%H%M%S)
+  fi
+  if [[ -f "/etc/nginx/ssl/${DOMAIN}.key" ]]; then
+    cp /etc/nginx/ssl/${DOMAIN}.key /etc/nginx/ssl/${DOMAIN}.key.bak.$(date +%Y%m%d_%H%M%S)
+  fi
 
-  # 安装证书
+  # 申请SSL证书（幂等）
+  "$ACME_DIR"/acme.sh --issue -d "$DOMAIN" --standalone --keylength 2048 || true
+
+  # 安装证书（幂等）
   "$ACME_DIR"/acme.sh --installcert -d "$DOMAIN" \
     --key-file /etc/nginx/ssl/"$DOMAIN".key \
     --fullchain-file /etc/nginx/ssl/"$DOMAIN".crt \
@@ -558,70 +567,42 @@ configure_domain() {
 setup_ssl_auto_renewal() {
   log "配置SSL证书自动续期..."
 
-  # 创建续期脚本
+  # 幂等创建续期脚本
   cat >/usr/local/bin/ssl-renew.sh <<'EOF'
 #!/bin/bash
-
 # SSL证书自动续期脚本
 LOG_FILE="/var/log/ssl-renew.log"
 ACME_DIR="/root/.acme.sh"
-
-# 日志函数
 log() {
   echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a "$LOG_FILE"
 }
-
-# 检查证书是否需要续期
 check_and_renew() {
   local domain="$1"
-  
-  # 检查证书是否存在
   if [[ ! -f "/etc/nginx/ssl/${domain}.crt" ]]; then
     log "证书文件不存在: ${domain}.crt"
     return 1
   fi
-  
-  # 获取证书过期时间
   local expiry_date=$(openssl x509 -in "/etc/nginx/ssl/${domain}.crt" -noout -enddate | cut -d= -f2)
   local expiry_timestamp=$(date -d "$expiry_date" +%s)
   local current_timestamp=$(date +%s)
   local days_until_expiry=$(( (expiry_timestamp - current_timestamp) / 86400 ))
-  
   log "域名 ${domain} 证书将在 ${days_until_expiry} 天后过期"
-  
-  # 如果证书在30天内过期，则续期
   if [[ $days_until_expiry -le 30 ]]; then
     log "开始续期域名 ${domain} 的SSL证书..."
-    
-    # 停止nginx以释放80端口
-    systemctl stop nginx
-    
-    # 续期证书
+    systemctl stop nginx || true
     if "$ACME_DIR"/acme.sh --renew -d "$domain" --standalone; then
       log "域名 ${domain} 证书续期成功"
-      
-      # 重新安装证书
       "$ACME_DIR"/acme.sh --installcert -d "$domain" \
         --key-file "/etc/nginx/ssl/${domain}.key" \
         --fullchain-file "/etc/nginx/ssl/${domain}.crt" \
         --reloadcmd "systemctl reload nginx"
-      
-      # 启动nginx
-      systemctl start nginx
-      
-      # 发送通知（如果有配置）
+      systemctl start nginx || true
       send_notification "SSL证书续期成功" "域名 ${domain} 的SSL证书已成功续期"
-      
       return 0
     else
       log "域名 ${domain} 证书续期失败"
-      
-      # 启动nginx
-      systemctl start nginx
-      
-      # 发送通知（如果有配置）
+      systemctl start nginx || true
       send_notification "SSL证书续期失败" "域名 ${domain} 的SSL证书续期失败，请手动检查"
-      
       return 1
     fi
   else
@@ -629,39 +610,19 @@ check_and_renew() {
     return 0
   fi
 }
-
-# 发送通知（可扩展）
 send_notification() {
   local title="$1"
   local message="$2"
-  
-  # 这里可以添加各种通知方式
-  # 例如：邮件、钉钉、企业微信、Telegram等
-  
-  # 示例：记录到系统日志
   logger -t "SSL-Renewal" "$title: $message"
-  
-  # 示例：如果配置了邮件通知
-  # if [[ -n "$MAIL_TO" ]]; then
-  #   echo "$message" | mail -s "$title" "$MAIL_TO"
-  # fi
 }
-
-# 主函数
 main() {
   log "开始SSL证书自动续期检查..."
-  
-  # 检查主域名
   if [[ -n "$DOMAIN" ]]; then
     check_and_renew "$DOMAIN"
   fi
-  
-  # 检查子域名（从nginx配置中提取）
   for config_file in /etc/nginx/sites-enabled/*; do
     if [[ -f "$config_file" ]]; then
-      # 提取server_name中的域名
       domains=$(grep -h "server_name" "$config_file" | sed 's/server_name//g' | tr -d ';' | tr ' ' '\n' | grep -v '^$' | grep -v '_')
-      
       for domain in $domains; do
         if [[ "$domain" != "$DOMAIN" ]] && [[ -f "/etc/nginx/ssl/${domain}.crt" ]]; then
           check_and_renew "$domain"
@@ -669,30 +630,23 @@ main() {
       done
     fi
   done
-  
   log "SSL证书自动续期检查完成"
 }
-
-# 执行主函数
 main "$@"
 EOF
-
   chmod +x /usr/local/bin/ssl-renew.sh
 
-  # 创建cron任务（每天凌晨2点检查）
+  # 幂等创建cron任务（每天凌晨2点检查）
   (
-    crontab -l 2>/dev/null
+    crontab -l 2>/dev/null | grep -v 'ssl-renew.sh'
     echo "0 2 * * * /usr/local/bin/ssl-renew.sh"
-  ) | crontab -
+  ) | sort | uniq | crontab -
 
-  # 创建证书状态检查脚本
+  # 幂等创建证书状态检查脚本
   cat >/usr/local/bin/ssl-status.sh <<'EOF'
 #!/bin/bash
-
-# SSL证书状态检查脚本
 echo "=== SSL证书状态检查 ==="
 echo
-
 for cert_file in /etc/nginx/ssl/*.crt; do
   if [[ -f "$cert_file" ]]; then
     domain=$(basename "$cert_file" .crt)
@@ -700,7 +654,6 @@ for cert_file in /etc/nginx/ssl/*.crt; do
     expiry_timestamp=$(date -d "$expiry_date" +%s)
     current_timestamp=$(date +%s)
     days_until_expiry=$(( (expiry_timestamp - current_timestamp) / 86400 ))
-    
     if [[ $days_until_expiry -le 30 ]]; then
       echo -e "\033[31m⚠️  域名: $domain\033[0m"
       echo -e "   过期时间: $expiry_date"
@@ -717,7 +670,6 @@ for cert_file in /etc/nginx/ssl/*.crt; do
     echo
   fi
 done
-
 echo "自动续期任务状态:"
 if crontab -l 2>/dev/null | grep -q "ssl-renew.sh"; then
   echo -e "\033[32m✅ 自动续期已启用\033[0m"
@@ -726,7 +678,6 @@ else
   echo -e "\033[31m❌ 自动续期未启用\033[0m"
 fi
 EOF
-
   chmod +x /usr/local/bin/ssl-status.sh
 
   log "SSL证书自动续期配置完成"
@@ -1110,39 +1061,41 @@ configure_firewall() {
 
   case $ID in
   ubuntu | debian)
-    # 安装ufw
-    apt install -y ufw
+    # 安装ufw（幂等）
+    if ! command -v ufw &>/dev/null; then
+      apt install -y ufw
+    fi
 
     # 默认策略
-    ufw default deny incoming
-    ufw default allow outgoing
+    ufw default deny incoming || true
+    ufw default allow outgoing || true
 
     # 允许SSH
-    ufw allow ssh
+    ufw allow ssh || true
 
     # 允许HTTP/HTTPS
-    ufw allow 80/tcp
-    ufw allow 443/tcp
+    ufw allow 80/tcp || true
+    ufw allow 443/tcp || true
 
     # 允许X-UI端口
-    ufw allow $XUI_PORT/tcp
+    ufw allow $XUI_PORT/tcp || true
 
-    # 启用防火墙
-    ufw --force enable
+    # 启用防火墙（幂等）
+    ufw --force enable || true
     ;;
   centos | rhel | almalinux | rocky)
-    # 使用firewalld
-    systemctl enable firewalld
-    systemctl start firewalld
+    # 使用firewalld（幂等）
+    systemctl enable firewalld || true
+    systemctl start firewalld || true
 
     # 允许服务
-    firewall-cmd --permanent --add-service=ssh
-    firewall-cmd --permanent --add-service=http
-    firewall-cmd --permanent --add-service=https
-    firewall-cmd --permanent --add-port=$XUI_PORT/tcp
+    firewall-cmd --permanent --add-service=ssh || true
+    firewall-cmd --permanent --add-service=http || true
+    firewall-cmd --permanent --add-service=https || true
+    firewall-cmd --permanent --add-port=$XUI_PORT/tcp || true
 
     # 重新加载
-    firewall-cmd --reload
+    firewall-cmd --reload || true
     ;;
   esac
 
@@ -1153,7 +1106,12 @@ configure_firewall() {
 optimize_system() {
   log "系统优化..."
 
-  # 创建系统优化配置
+  # 备份原有配置
+  if [[ -f /etc/sysctl.d/99-vps-optimization.conf ]]; then
+    cp /etc/sysctl.d/99-vps-optimization.conf /etc/sysctl.d/99-vps-optimization.conf.bak.$(date +%Y%m%d_%H%M%S)
+  fi
+
+  # 创建系统优化配置（幂等）
   cat >/etc/sysctl.d/99-vps-optimization.conf <<EOF
 # 网络优化
 net.core.rmem_max = 16777216
@@ -1164,10 +1122,8 @@ net.ipv4.tcp_congestion_control = bbr
 net.ipv4.tcp_slow_start_after_idle = 0
 net.ipv4.tcp_tw_reuse = 1
 net.ipv4.ip_local_port_range = 1024 65535
-
 # 文件描述符限制
 fs.file-max = 65535
-
 # 内存优化
 vm.swappiness = 10
 vm.dirty_ratio = 15
@@ -1177,13 +1133,15 @@ EOF
   # 应用配置
   sysctl -p /etc/sysctl.d/99-vps-optimization.conf
 
-  # 设置文件描述符限制
-  cat >>/etc/security/limits.conf <<EOF
+  # 设置文件描述符限制（幂等）
+  if ! grep -q 'soft nofile 65535' /etc/security/limits.conf 2>/dev/null; then
+    cat >>/etc/security/limits.conf <<EOF
 * soft nofile 65535
 * hard nofile 65535
 root soft nofile 65535
 root hard nofile 65535
 EOF
+  fi
 
   log "系统优化完成"
 }
@@ -1192,12 +1150,10 @@ EOF
 create_management_script() {
   log "创建管理脚本..."
 
+  # 幂等生成管理脚本
   cat >/usr/local/bin/vps-manager <<'EOF'
 #!/bin/bash
-
-# VPS管理脚本
 SCRIPT_DIR="/root/vps-init"
-
 case "$1" in
     "status")
         echo "=== 服务状态 ==="
@@ -1254,12 +1210,11 @@ case "$1" in
         ;;
 esac
 EOF
-
   chmod +x /usr/local/bin/vps-manager
   log "管理脚本创建完成，使用: vps-manager {status|restart|logs|ssl-renew|backup|proxy}"
 
-  # 复制代理管理脚本到系统目录
-  cp "$SCRIPT_DIR/proxy-manager.sh" /usr/local/bin/proxy-manager
+  # 幂等复制代理管理脚本到系统目录
+  cp -f "$SCRIPT_DIR/proxy-manager.sh" /usr/local/bin/proxy-manager
   chmod +x /usr/local/bin/proxy-manager
   log "代理管理工具已安装，使用: proxy-manager 或 vps-manager proxy"
 }

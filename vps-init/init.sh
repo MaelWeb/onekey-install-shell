@@ -567,7 +567,22 @@ configure_domain() {
   fi
 
   # 申请SSL证书（幂等）
-  "$ACME_DIR"/acme.sh --issue -d "$DOMAIN" --standalone --keylength 2048 || true
+  log "申请SSL证书，临时停止nginx以释放80端口..."
+  systemctl stop nginx || true
+
+  # 等待端口释放
+  sleep 2
+
+  # 申请证书
+  if "$ACME_DIR"/acme.sh --issue -d "$DOMAIN" --standalone --keylength 2048; then
+    log "SSL证书申请成功"
+  else
+    log "SSL证书申请失败，但继续安装流程"
+  fi
+
+  # 重新启动nginx
+  log "重新启动nginx..."
+  systemctl start nginx || true
 
   # 安装证书（幂等）
   "$ACME_DIR"/acme.sh --installcert -d "$DOMAIN" \

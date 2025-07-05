@@ -340,7 +340,7 @@ check_ssl_prerequisites() {
   log "检查SSL证书申请前置条件..."
 
   # 1. 检查域名格式
-  if [[ ! "$domain" =~ ^[a-zA-Z0-9][a-zA-Z0-9-]{1,61}[a-zA-Z0-9]\.[a-zA-Z]{2,}$ ]]; then
+  if [[ ! "$domain" =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]*[a-zA-Z0-9]\.[a-zA-Z]{2,}$ ]]; then
     error "域名格式不正确: $domain"
   fi
 

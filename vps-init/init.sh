@@ -305,11 +305,41 @@ install_acme() {
   log "安装acme.sh..."
 
   if [[ ! -d "$ACME_DIR" ]]; then
-    curl https://get.acme.sh | sh -s email=admin@example.com
+    # 获取用户邮箱
+    echo -e "${CYAN}=== acme.sh 邮箱配置 ===${NC}"
+    read -p "请输入用于SSL证书管理的邮箱地址: " ACME_EMAIL
+    if [[ -z "$ACME_EMAIL" ]]; then
+      error "邮箱地址不能为空"
+    fi
+
+    # 验证邮箱格式
+    if [[ ! "$ACME_EMAIL" =~ ^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$ ]]; then
+      error "邮箱格式不正确: $ACME_EMAIL"
+    fi
+
+    curl https://get.acme.sh | sh -s email="$ACME_EMAIL"
     source ~/.bashrc
   else
     log "acme.sh已安装，升级中..."
     "$ACME_DIR"/acme.sh --upgrade
+
+    # 检查是否需要重新配置邮箱
+    if "$ACME_DIR"/acme.sh --list 2>&1 | grep -q "admin@example.com"; then
+      warn "检测到acme.sh使用默认邮箱，需要重新配置"
+      echo -e "${CYAN}=== 重新配置 acme.sh 邮箱 ===${NC}"
+      read -p "请输入用于SSL证书管理的邮箱地址: " ACME_EMAIL
+      if [[ -z "$ACME_EMAIL" ]]; then
+        error "邮箱地址不能为空"
+      fi
+
+      # 验证邮箱格式
+      if [[ ! "$ACME_EMAIL" =~ ^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$ ]]; then
+        error "邮箱格式不正确: $ACME_EMAIL"
+      fi
+
+      # 重新注册账户
+      "$ACME_DIR"/acme.sh --register-account -m "$ACME_EMAIL"
+    fi
   fi
 
   # 设置自动更新

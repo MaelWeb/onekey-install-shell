@@ -1,0 +1,76 @@
+{
+  "system": {
+    "os": "ubuntu",
+    "version": "20.04",
+    "arch": "x86_64",
+    "cpu_cores": 2,
+    "memory_mb": 2048
+  },
+  "domain": {
+    "main_domain": "example.com",
+    "ssl_enabled": true,
+    "cert_path": "/etc/nginx/ssl/example.com.crt",
+    "key_path": "/etc/nginx/ssl/example.com.key"
+  },
+  "nginx": {
+    "worker_processes": 2,
+    "worker_connections": 2048,
+    "gzip_enabled": true,
+    "http2_enabled": true,
+    "security_headers": true
+  },
+  "proxy_configs": [
+    {
+      "subdomain": "api",
+      "backend": "127.0.0.1:3000",
+      "ssl_enabled": true,
+      "websocket_support": true
+    },
+    {
+      "subdomain": "admin",
+      "backend": "127.0.0.1:8080",
+      "ssl_enabled": true,
+      "websocket_support": false
+    }
+  ],
+  "path_proxy_configs": [
+    {
+      "path": "/api",
+      "backend": "127.0.0.1:3000",
+      "websocket_support": true,
+      "remove_prefix": false
+    },
+    {
+      "path": "/admin",
+      "backend": "127.0.0.1:8080",
+      "websocket_support": false,
+      "remove_prefix": true
+    },
+    {
+      "path": "/static",
+      "backend": "127.0.0.1:4000",
+      "websocket_support": false,
+      "remove_prefix": false
+    }
+  ],
+  "xui": {
+    "port": 54321,
+    "install_path": "/usr/local/x-ui",
+    "enabled": true
+  },
+  "firewall": {
+    "enabled": true,
+    "allowed_ports": [22, 80, 443, 54321],
+    "type": "ufw"
+  },
+  "optimization": {
+    "bbr_enabled": true,
+    "file_descriptors": 65535,
+    "swappiness": 10
+  },
+  "backup": {
+    "enabled": true,
+    "retention_days": 30,
+    "include_paths": ["/etc/nginx", "/usr/local/x-ui", "/root/.acme.sh"]
+  }
+}

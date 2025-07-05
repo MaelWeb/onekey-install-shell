@@ -16,12 +16,14 @@ X-UI 是一个基于 Xray-core 的多用户多协议代理面板，本脚本提�
 ## ✨ 主要功能
 
 ### 🔧 核心功能
+
 - **多用户多协议支持**：支持多种代理协议，满足不同用户需求
 - **Web 管理面板**：提供直观的 Web 界面进行配置管理
 - **自动安装部署**：一键安装，自动配置系统服务
 - **定时任务管理**：自动设置定时重启任务
 
 ### 🌐 协议支持
+
 - **Argo 隧道**：固定和临时隧道支持
 - **Warp 套件**：Warp 索套和 Warp 解锁功能
 - **Psiphon VPN**：支持 30 个国家的赛风 VPN
@@ -29,6 +31,7 @@ X-UI 是一个基于 Xray-core 的多用户多协议代理面板，本脚本提�
 - **Reality 协议**：一键安装 Reality 协议
 
 ### 📱 客户端配置
+
 - **Clash Meta**：支持 Clash Meta 配置导出
 - **Sing-box**：支持 Sing-box 配置导出
 - **V2rayN**：支持 V2rayN 配置导出
@@ -36,26 +39,31 @@ X-UI 是一个基于 Xray-core 的多用户多协议代理面板，本脚本提�
 ## 🛠️ 系统要求
 
 ### 支持的操作系统
+
 - **Debian 9+**
 - **Ubuntu 18.04+**
 - **CentOS 7+**
 
 ### 硬件架构
+
 - **x86_64 (amd64)**
 - **aarch64 (arm64)**
 
 ### 权限要求
+
 - 需要 **root 权限** 运行安装脚本
 
 ## 🚀 快速开始
 
 ### 1. 下载脚本
+
 ```bash
 # 克隆项目或下载脚本文件
-wget -O x-ui-install.sh https://raw.githubusercontent.com/your-repo/x-ui/x-ui-install.sh
+wget -O x-ui-install.sh https://raw.githubusercontent.com/MaelWeb/x-ui/x-ui-install.sh
 ```
 
 ### 2. 执行安装
+
 ```bash
 # 给脚本执行权限
 chmod +x x-ui-install.sh
@@ -65,6 +73,7 @@ sudo bash x-ui-install.sh
 ```
 
 ### 3. 选择安装选项
+
 脚本启动后会显示主菜单，选择相应的数字进行操作：
 
 ```
@@ -134,6 +143,7 @@ x-ui-yg 安装成功
 ## 🔧 管理命令
 
 ### 系统服务管理
+
 ```bash
 # 启动服务
 x-ui-yg start
@@ -149,6 +159,7 @@ x-ui-yg status
 ```
 
 ### 其他管理操作
+
 ```bash
 # 更新到最新版本
 x-ui-yg update
@@ -180,9 +191,11 @@ x-ui-yg log
 ## 🔄 更新和备份
 
 ### 更新前准备
+
 在更新前，建议进行数据备份：
 
 1. **通过 Web 面板备份**：
+
    - 登录管理面板
    - 进入"备份与恢复"页面
    - 下载备份文件 `x-ui-yg.db`
@@ -193,6 +206,7 @@ x-ui-yg log
    ```
 
 ### 执行更新
+
 ```bash
 # 运行脚本选择更新选项
 sudo bash x-ui-install.sh
@@ -202,12 +216,14 @@ sudo bash x-ui-install.sh
 ## 🛡️ 安全建议
 
 ### 基本安全措施
+
 1. **修改默认密码**：安装后立即修改默认的 admin/admin 密码
 2. **更改默认端口**：考虑修改默认的 54321 端口
 3. **防火墙配置**：确保只开放必要的端口
 4. **定期备份**：定期备份配置文件和数据
 
 ### 防火墙配置示例
+
 ```bash
 # Ubuntu/Debian
 ufw allow 54321/tcp
@@ -223,34 +239,38 @@ firewall-cmd --reload
 ### 常见问题
 
 1. **服务启动失败**
+
    ```bash
    # 查看详细日志
    x-ui-yg log
-   
+
    # 检查服务状态
    systemctl status x-ui-yg
    ```
 
 2. **端口被占用**
+
    ```bash
    # 检查端口占用
    netstat -tlnp | grep 54321
-   
+
    # 修改端口后重启服务
    x-ui-yg setting -port 54322
    x-ui-yg restart
    ```
 
 3. **权限问题**
+
    ```bash
    # 确保脚本有执行权限
    chmod +x x-ui-install.sh
-   
+
    # 确保以 root 用户运行
    sudo bash x-ui-install.sh
    ```
 
 ### 日志查看
+
 ```bash
 # 查看实时日志
 x-ui-yg log
@@ -262,11 +282,13 @@ journalctl -u x-ui-yg -f
 ## 📞 技术支持
 
 ### 官方资源
+
 - **Telegram 频道**：t.me/ygkkk
 - **博客**：ygkkk.blogspot.com
 - **GitHub**：https://github.com/yonggekkk/x-ui-yg
 
 ### 版本信息
+
 - **当前版本**：v1.8.11
 - **Xray-core 版本**：v1.8.8
 - **最后更新**：2024.03.18
